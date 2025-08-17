@@ -18,17 +18,48 @@ from protobuf.douyin import *
 import io
 from contextlib import redirect_stdout, redirect_stderr
 
+class ModernStyle:
+    """现代化UI样式配置"""
+    # Windows 11 / macOS 风格配色
+    BG_PRIMARY = "#F5F5F7"  # 主背景色 - 浅灰
+    BG_SECONDARY = "#FFFFFF"  # 次要背景色 - 白色
+    BG_ACCENT = "#007AFF"  # 强调色 - 蓝色
+    BG_ACCENT_HOVER = "#0056CC"  # 强调色悬停
+    BG_DANGER = "#FF6B6B"  # 危险色 - 柔和红色
+    BG_SUCCESS = "#51CF66"  # 成功色 - 柔和绿色
+    BG_NEUTRAL = "#6C757D"  # 中性色 - 灰色
+
+    TEXT_PRIMARY = "#1D1D1F"  # 主文本色
+    TEXT_SECONDARY = "#6E6E73"  # 次要文本色
+    TEXT_LIGHT = "#FFFFFF"  # 浅色文本
+
+    BORDER_COLOR = "#D1D1D6"  # 边框色
+    SHADOW_COLOR = "#00000010"  # 阴影色
+
+    # 控制台配色 (类似 VS Code Dark)
+    CONSOLE_BG = "#1E1E1E"
+    CONSOLE_FG = "#D4D4D4"
+    CONSOLE_ACCENT = "#4FC3F7"
+
 class LiveStreamUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("抖音直播间弹幕采集工具")
-        self.root.geometry("1200x800")
+        self.root.geometry("1400x900")  # 增大窗口尺寸
         self.root.resizable(True, True)
+
+        # 设置现代化样式
+        self.setup_modern_style()
 
         # 直播间数据存储
         self.live_streams = {}
         self.live_fetchers = {}
         self.config_file = "live_config.json"
+
+        # 创建data目录（如果不存在）
+        self.data_dir = "data"
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
 
         # 当前选中的直播间ID
         self.selected_live_id = None
@@ -36,10 +67,131 @@ class LiveStreamUI:
         self.setup_ui()
         self.load_config()
 
+    def setup_modern_style(self):
+        """设置现代化样式主题"""
+        style = ttk.Style()
+
+        # 设置主题
+        style.theme_use('clam')
+
+        # 配置主窗口
+        self.root.configure(bg=ModernStyle.BG_PRIMARY)
+
+        # 配置Frame样式
+        style.configure('Modern.TFrame',
+                       background=ModernStyle.BG_SECONDARY,
+                       relief='flat',
+                       borderwidth=1)
+
+        style.configure('Card.TFrame',
+                       background=ModernStyle.BG_SECONDARY,
+                       relief='flat',
+                       borderwidth=0)
+
+        # 配置LabelFrame样式
+        style.configure('Modern.TLabelframe',
+                       background=ModernStyle.BG_SECONDARY,
+                       relief='flat',
+                       borderwidth=1,
+                       lightcolor=ModernStyle.BORDER_COLOR,
+                       darkcolor=ModernStyle.BORDER_COLOR)
+
+        style.configure('Modern.TLabelframe.Label',
+                       background=ModernStyle.BG_SECONDARY,
+                       foreground=ModernStyle.TEXT_PRIMARY,
+                       font=('Segoe UI', 11, 'bold'))
+
+        # 配置按钮样式 - 使用更柔和的颜色
+        style.configure('Modern.TButton',
+                       background=ModernStyle.BG_ACCENT,
+                       foreground=ModernStyle.TEXT_LIGHT,
+                       font=('Segoe UI', 10),
+                       padding=(20, 8),
+                       relief='flat',
+                       borderwidth=0)
+
+        style.map('Modern.TButton',
+                 background=[('active', ModernStyle.BG_ACCENT_HOVER),
+                           ('pressed', ModernStyle.BG_ACCENT_HOVER)])
+
+        # 柔和的危险按钮样式
+        style.configure('Danger.TButton',
+                       background=ModernStyle.BG_DANGER,
+                       foreground=ModernStyle.TEXT_LIGHT,
+                       font=('Segoe UI', 10),
+                       padding=(20, 8),
+                       relief='flat',
+                       borderwidth=0)
+
+        # 柔和的成功按钮样式
+        style.configure('Success.TButton',
+                       background=ModernStyle.BG_SUCCESS,
+                       foreground=ModernStyle.TEXT_LIGHT,
+                       font=('Segoe UI', 10),
+                       padding=(20, 8),
+                       relief='flat',
+                       borderwidth=0)
+
+        # 中性按钮样式
+        style.configure('Neutral.TButton',
+                       background=ModernStyle.BG_NEUTRAL,
+                       foreground=ModernStyle.TEXT_LIGHT,
+                       font=('Segoe UI', 10),
+                       padding=(20, 8),
+                       relief='flat',
+                       borderwidth=0)
+
+        # 圆形小按钮样式（用于帮助按钮）
+        style.configure('Circle.TButton',
+                       background=ModernStyle.TEXT_SECONDARY,
+                       foreground=ModernStyle.TEXT_LIGHT,
+                       font=('Segoe UI', 10, 'bold'),
+                       padding=(0, 0),
+                       relief='flat',
+                       borderwidth=0,
+                       width=3)
+
+        style.map('Circle.TButton',
+                 background=[('active', ModernStyle.BG_ACCENT),
+                           ('pressed', ModernStyle.BG_ACCENT_HOVER)])
+
+        # 配置Treeview样式
+        style.configure('Modern.Treeview',
+                       background=ModernStyle.BG_SECONDARY,
+                       foreground=ModernStyle.TEXT_PRIMARY,
+                       font=('Segoe UI', 10),
+                       fieldbackground=ModernStyle.BG_SECONDARY,
+                       borderwidth=0,
+                       relief='flat')
+
+        style.configure('Modern.Treeview.Heading',
+                       background=ModernStyle.BG_PRIMARY,
+                       foreground=ModernStyle.TEXT_PRIMARY,
+                       font=('Segoe UI', 10, 'bold'),
+                       relief='flat',
+                       borderwidth=1)
+
+        # 配置Entry样式
+        style.configure('Modern.TEntry',
+                       fieldbackground=ModernStyle.BG_SECONDARY,
+                       foreground=ModernStyle.TEXT_PRIMARY,
+                       font=('Segoe UI', 11),
+                       borderwidth=2,
+                       relief='flat',
+                       insertcolor=ModernStyle.BG_ACCENT)
+
+        # 配置Scrollbar样式 - 现代化滚动条
+        style.configure('Modern.Vertical.TScrollbar',
+                       background=ModernStyle.BG_PRIMARY,
+                       troughcolor=ModernStyle.BG_PRIMARY,
+                       arrowcolor=ModernStyle.TEXT_SECONDARY,
+                       relief='flat',
+                       borderwidth=0)
+
     def setup_ui(self):
         """设置UI界面"""
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="10")
+        # 主框架 - 使用更大的内边距
+        main_frame = ttk.Frame(self.root, style='Card.TFrame', padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         # 配置网格权重
@@ -50,154 +202,331 @@ class LiveStreamUI:
         main_frame.rowconfigure(1, weight=1)
 
         # 上半部分框架：直播间列表和控制按钮
-        top_frame = ttk.Frame(main_frame)
-        top_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        top_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        top_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
         top_frame.columnconfigure(0, weight=1)
         top_frame.rowconfigure(0, weight=1)
 
-        # 直播间列表框架
-        list_frame = ttk.LabelFrame(top_frame, text="直播间列表", padding="10")
-        list_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 10))
+        # 直播间列表框架 - 现代化卡片样式
+        list_frame = ttk.LabelFrame(top_frame, text="  直播间列表  ",
+                                   style='Modern.TLabelframe', padding="15")
+        list_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 15))
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
+        # 创建TreeView容器框架
+        tree_container = ttk.Frame(list_frame, style='Card.TFrame')
+        tree_container.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        tree_container.columnconfigure(0, weight=1)
+        tree_container.rowconfigure(0, weight=1)
+
         # 创建Treeview
         columns = ("live_id", "username", "status", "excel_file")
-        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        self.tree = ttk.Treeview(tree_container, columns=columns, show="headings",
+                                height=14, style='Modern.Treeview')
 
         # 设置列标题
         self.tree.heading("live_id", text="直播间ID")
-        self.tree.heading("username", text="主播用户名")
+        self.tree.heading("username", text="主播信息")
         self.tree.heading("status", text="采集状态")
-        self.tree.heading("excel_file", text="Excel文件")
+        self.tree.heading("excel_file", text="数据文件")
 
-        # 设置列宽
-        self.tree.column("live_id", width=120)
-        self.tree.column("username", width=150)
-        self.tree.column("status", width=100)
-        self.tree.column("excel_file", width=200)
+        # 设置列宽 - 更合理的分配
+        self.tree.column("live_id", width=140, minwidth=120)
+        self.tree.column("username", width=200, minwidth=150)
+        self.tree.column("status", width=120, minwidth=100)
+        self.tree.column("excel_file", width=250, minwidth=200)
 
-        # 添加滚动条
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        # 添加滚动条 - 与实时日志保持一致的样式
+        tree_scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scrollbar.set)
 
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        tree_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
 
         # 绑定选择事件
         self.tree.bind('<<TreeviewSelect>>', self.on_tree_select)
 
-        # 控制按钮框架
-        control_frame = ttk.Frame(top_frame)
-        control_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N), padx=(10, 0))
+        # 控制按钮框架 - 垂直布局，现代化间距
+        control_frame = ttk.Frame(top_frame, style='Card.TFrame')
+        control_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N), padx=(15, 0))
 
-        # 控制按钮
-        ttk.Button(control_frame, text="添加直播间", command=self.show_add_dialog).grid(row=0, column=0, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="开始采集", command=self.start_collection).grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="停止采集", command=self.stop_collection).grid(row=2, column=0, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="删除直播间", command=self.remove_live_stream).grid(row=3, column=0, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="刷新状态", command=self.refresh_status).grid(row=4, column=0, pady=5, sticky=(tk.W, tk.E))
+        # 按钮容器 - 添加背景卡片
+        button_container = ttk.LabelFrame(control_frame, text="  操作面板  ",
+                                         style='Modern.TLabelframe', padding="15")
+        button_container.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N))
 
-        control_frame.columnconfigure(0, weight=1)
+        # 控制按钮 - 使用更柔和的颜色
+        ttk.Button(button_container, text="➕ 添加直播间",
+                  command=self.show_add_dialog,
+                  style='Modern.TButton').grid(row=0, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
 
-        # 下半部分：控制台日志框架
-        console_frame = ttk.LabelFrame(main_frame, text="控制台日志", padding="10")
-        console_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        ttk.Button(button_container, text="▶️ 开始采集",
+                  command=self.start_collection,
+                  style='Success.TButton').grid(row=1, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
+
+        ttk.Button(button_container, text="⏹️ 停止采集",
+                  command=self.stop_collection,
+                  style='Danger.TButton').grid(row=2, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
+
+        ttk.Button(button_container, text="🗑️删除直播间",
+                  command=self.remove_live_stream,
+                  style='Danger.TButton').grid(row=3, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
+
+        ttk.Button(button_container, text="🔄 刷新状态",
+                  command=self.refresh_status,
+                  style='Neutral.TButton').grid(row=4, column=0, pady=(0, 0), sticky=(tk.W, tk.E))
+
+        button_container.columnconfigure(0, weight=1)
+
+        # 下半部分：控制台日志框架 - 现代化设计
+        console_frame = ttk.LabelFrame(main_frame, text="  实时日志  ",
+                                      style='Modern.TLabelframe', padding="15")
+        console_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         console_frame.columnconfigure(0, weight=1)
         console_frame.rowconfigure(0, weight=1)
 
-        # 控制台文本框
+        # 控制台文本框 - 现代化深色主题
         self.console_text = scrolledtext.ScrolledText(
             console_frame,
-            height=15,
+            height=16,
             wrap=tk.WORD,
-            font=('Consolas', 9),
-            bg='black',
-            fg='lightgreen'
+            font=('Consolas', 10),
+            bg=ModernStyle.CONSOLE_BG,
+            fg=ModernStyle.CONSOLE_FG,
+            insertbackground=ModernStyle.CONSOLE_ACCENT,
+            selectbackground=ModernStyle.BG_ACCENT,
+            selectforeground=ModernStyle.TEXT_LIGHT,
+            relief='flat',
+            borderwidth=0,
+            padx=10,
+            pady=10
         )
         self.console_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        # 状态栏和帮助按钮容器
+        bottom_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        bottom_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        bottom_frame.columnconfigure(0, weight=1)
+
+        # 状态栏 - 现代化设计
+        self.status_label = ttk.Label(bottom_frame,
+                                     text="🟢 就绪 | 请选择直播间查看实时日志",
+                                     font=('Segoe UI', 9),
+                                     foreground=ModernStyle.TEXT_SECONDARY,
+                                     background=ModernStyle.BG_SECONDARY)
+        self.status_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+
+        # 帮助按钮 - 圆形小按钮
+        help_btn = ttk.Button(bottom_frame, text="?", command=self.show_help_dialog,
+                             style='Circle.TButton')
+        help_btn.grid(row=0, column=1, sticky=tk.E, padx=5, pady=5)
 
         # 双击事件绑定
         self.tree.bind('<Double-1>', self.on_double_click)
 
+    def show_help_dialog(self):
+        """显示帮助对话框"""
+        messagebox.showinfo("帮助",
+                           "版本：v1.2\nbug修复、个性化定制请联系作者\n微信：enbool")
+
     def show_add_dialog(self):
-        """显示添加直播间对话框"""
+        """显示添加直播间对话框 - 现代化设计"""
         dialog = tk.Toplevel(self.root)
         dialog.title("添加直播间")
-        dialog.geometry("320x180")  # 增加窗口高度从150到180，宽度从300到320
+        dialog.geometry("480x360")  # 修正窗口高度
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
+        dialog.configure(bg=ModernStyle.BG_SECONDARY)
 
         # 居中显示
-        dialog.geometry("+%d+%d" % (
-            self.root.winfo_rootx() + 50,
-            self.root.winfo_rooty() + 50
-        ))
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - 480) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - 280) // 2
+        dialog.geometry(f"+{x}+{y}")
 
-        # 对话框内容
-        ttk.Label(dialog, text="请输入直播间ID:", font=('Arial', 12)).pack(pady=(20, 10))  # 调整上下边距
+        # 主容器
+        main_container = ttk.Frame(dialog, style='Card.TFrame', padding="40")
+        main_container.pack(fill=tk.BOTH, expand=True)
 
-        live_id_var = tk.StringVar()
-        entry = ttk.Entry(dialog, textvariable=live_id_var, width=25, font=('Arial', 11))
-        entry.pack(pady=(0, 15))  # 调整下边距
+        # 图标区域
+        icon_label = ttk.Label(main_container,
+                              text="📺",
+                              font=('Segoe UI', 32),
+                              background=ModernStyle.BG_SECONDARY)
+        icon_label.pack(pady=(0, 30))
+
+        # 输入提示
+        hint_label = ttk.Label(main_container,
+                              text="请输入直播间网址：",
+                              font=('Segoe UI', 12, 'bold'),
+                              foreground=ModernStyle.TEXT_PRIMARY,
+                              background=ModernStyle.BG_SECONDARY)
+        hint_label.pack(pady=(0, 15))
+
+        # 输入框
+        live_url_var = tk.StringVar()
+        entry = ttk.Entry(main_container, textvariable=live_url_var,
+                         font=('Segoe UI', 11),
+                         style='Modern.TEntry')
+        entry.pack(fill=tk.X, ipady=12, pady=(0, 20))
         entry.focus()
 
-        # 按钮框架
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=(10, 20))  # 增加上下边距
+        # 状态标签（用于显示验证信息）
+        dialog_status_var = tk.StringVar()  # 使用局部变量而不是实例变量
+        status_label = ttk.Label(main_container,
+                                textvariable=dialog_status_var,
+                                font=('Segoe UI', 9),
+                                foreground=ModernStyle.TEXT_SECONDARY,
+                                background=ModernStyle.BG_SECONDARY)
+        status_label.pack(pady=(0, 20))
 
-        def on_add():
-            live_id = live_id_var.get().strip()
-            if live_id:
-                dialog.destroy()
-                self.add_live_stream(live_id)
-            else:
-                messagebox.showwarning("警告", "请输入直播间ID")
+        # 按钮容器
+        button_container = ttk.Frame(main_container, style='Card.TFrame')
+        button_container.pack()
+
+        def extract_live_id(url_or_id):
+            """从直播间网址或ID中提取直播间ID"""
+            import re
+
+            # 如果输入的是纯数字，直接返回
+            if url_or_id.isdigit():
+                return url_or_id
+
+            # 从URL中提取ID的正则表达式
+            patterns = [
+                r'live\.douyin\.com/(\d+)',  # https://live.douyin.com/986387176104
+                r'webcast\.amemv\.com/webcast/reflow/(\d+)',  # 其他可能的格式
+                r'douyin\.com/.*?(\d{10,})',  # 通用匹配长数字
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, url_or_id)
+                if match:
+                    return match.group(1)
+
+            return None
+
+        def validate_and_add():
+            input_text = live_url_var.get().strip()
+
+            # 基本验证
+            if not input_text:
+                dialog_status_var.set("❌ 请输入直播间网址或ID")
+                return
+
+            # 提取直播间ID
+            live_id = extract_live_id(input_text)
+
+            if not live_id:
+                dialog_status_var.set("❌ 无法从输入内容中提取直播间ID")
+                return
+
+            # 数字验证
+            if not live_id.isdigit():
+                dialog_status_var.set("❌ 提取的直播间ID格式错误")
+                return
+
+            # 长度验证
+            if len(live_id) < 6 or len(live_id) > 15:
+                dialog_status_var.set("❌ 直播间ID长度应在6-15位之间")
+                return
+
+            # 重复检查
+            if live_id in self.live_streams:
+                dialog_status_var.set("❌ 该直播间已存在")
+                return
+
+            dialog_status_var.set(f"✅ 解析成功，直播间ID: {live_id}")
+            # 先关闭对话框，然后添加直播间
+            dialog.destroy()
+            # 立即调用添加方法
+            self.add_live_stream(live_id)
 
         def on_cancel():
             dialog.destroy()
 
-        ttk.Button(btn_frame, text="添加", command=on_add).pack(side=tk.LEFT, padx=10)  # 增加按钮间距
-        ttk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=10)
+        def on_entry_change(*args):
+            """输入框内容变化时清空状态并尝试实时解析"""
+            input_text = live_url_var.get().strip()
+            if input_text:
+                live_id = extract_live_id(input_text)
+                if live_id and live_id.isdigit() and 6 <= len(live_id) <= 15:
+                    dialog_status_var.set(f"🔍 检测到直播间ID: {live_id}")
+                else:
+                    dialog_status_var.set("🔍 正在解析...")
+            else:
+                dialog_status_var.set("")
 
-        # 绑定回车键
-        entry.bind('<Return>', lambda e: on_add())
+        # 绑定输入变化事件
+        live_url_var.trace('w', on_entry_change)
+
+        # 取消按钮
+        cancel_btn = ttk.Button(button_container, text="取消", command=on_cancel,
+                               style='Neutral.TButton', width=12)
+        cancel_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+        # 添加按钮
+        add_btn = ttk.Button(button_container, text="添加直播间", command=validate_and_add,
+                            style='Modern.TButton', width=15)
+        add_btn.pack(side=tk.LEFT)
+
+        # 绑定快捷键
+        entry.bind('<Return>', lambda e: validate_and_add())
         dialog.bind('<Escape>', lambda e: on_cancel())
 
-    def on_tree_select(self, event):
-        """树形列表选择事件"""
-        selected = self.tree.selection()
-        if selected:
-            item = self.tree.item(selected[0])
-            new_selected_id = str(item['values'][0])
+        # 窗口关闭事件
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
-            # 如果选中的直播间发生变化，清空控制台并显示提示
-            if self.selected_live_id != new_selected_id:
-                self.selected_live_id = new_selected_id
-                self.console_text.delete('1.0', tk.END)
-                self.log_to_console(f"【选择】已切换到直播间: {self.selected_live_id}")
-
-                # 如果选中的直播间正在采集，显示当前状态
-                if self.selected_live_id in self.live_fetchers:
-                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 正在采集中")
-                else:
-                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 未开始采集")
+    def update_status(self, message, status_type="info"):
+        """更新状态栏"""
+        icons = {
+            "info": "🔵",
+            "success": "🟢",
+            "warning": "🟡",
+            "error": "🔴"
+        }
+        icon = icons.get(status_type, "🔵")
+        self.status_label.configure(text=f"{icon} {message}")
 
     def log_to_console(self, message, live_id=None):
-        """输出日志到控制台 - 只显示当前选中直播间的日志"""
+        """输出日志到控制台 - 增强的颜色支持"""
         # 如果指定了live_id，只有当它是当前选中的直播间时才显示
         if live_id and live_id != self.selected_live_id:
             return
 
-        # 如果没有指定live_id，表示是系统日志，总是显示
-        current_time = datetime.now().strftime('%H:%M:%S')
-        log_message = f"[{current_time}] {message}\n"
+        # 配置颜色标签
+        self.console_text.tag_configure("chat", foreground="#4FC3F7")
+        self.console_text.tag_configure("gift", foreground="#FF9800")
+        self.console_text.tag_configure("like", foreground="#E91E63")
+        self.console_text.tag_configure("follow", foreground="#4CAF50")
+        self.console_text.tag_configure("system", foreground="#9C27B0")
+        self.console_text.tag_configure("error", foreground="#F44336")
+        self.console_text.tag_configure("time", foreground="#757575")
 
-        self.console_text.insert(tk.END, log_message)
+        # 时间戳
+        current_time = datetime.now().strftime('%H:%M:%S')
+        time_text = f"[{current_time}] "
+
+        # 根据消息类型选择颜色
+        tag = "system"
+        if "聊天msg" in message:
+            tag = "chat"
+        elif "礼物msg" in message:
+            tag = "gift"
+        elif "点赞msg" in message:
+            tag = "like"
+        elif "关注msg" in message:
+            tag = "follow"
+        elif "异常" in message or "错误" in message:
+            tag = "error"
+
+        # 插入消息
+        self.console_text.insert(tk.END, time_text, "time")
+        self.console_text.insert(tk.END, message + "\n", tag)
         self.console_text.see(tk.END)
 
-        # 限制日志行数，避免内存占用过多
+        # 限制日志行数
         lines = int(self.console_text.index('end-1c').split('.')[0])
         if lines > 1000:
             self.console_text.delete('1.0', '200.0')
@@ -230,7 +559,7 @@ class LiveStreamUI:
 
     def add_live_stream(self, live_id):
         """添加直播间"""
-        live_id = str(live_id)  # 确保live_id是字符串类型
+        live_id = str(live_id)
         if not live_id:
             messagebox.showwarning("警告", "请输入直播间ID")
             return
@@ -239,17 +568,14 @@ class LiveStreamUI:
             messagebox.showinfo("提示", "该直播间已存在")
             return
 
-        # 获取直播间信息
+        self.update_status(f"正在获取直播间 {live_id} 信息...", "info")
         self.log_to_console(f"【添加】正在获取直播间 {live_id} 信息...")
 
         def get_room_info():
             try:
                 fetcher = DouyinLiveWebFetcher(live_id, ui_mode=True)
-
-                # 调用get_room_status获取直播间状态和主播信息
                 room_status_info = fetcher.get_room_status()
 
-                # 解析返回的信息
                 username = "未知主播"
                 live_status = "未知状态"
 
@@ -258,7 +584,6 @@ class LiveStreamUI:
                     room_status = room_status_info.get('room_status', 2)
                     live_status = "正在直播" if room_status == 0 else "已结束"
 
-                # 添加到列表
                 self.live_streams[live_id] = {
                     "live_id": live_id,
                     "username": username,
@@ -270,10 +595,12 @@ class LiveStreamUI:
 
                 self.root.after(0, lambda: self.refresh_tree())
                 self.root.after(0, lambda: self.save_config())
+                self.root.after(0, lambda: self.update_status(f"成功添加直播间: {username}", "success"))
                 self.root.after(0, lambda: self.log_to_console(f"【添加】成功添加直播间 {live_id} - {username}({live_status})"))
 
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("错误", f"添加直播间失败: {e}"))
+                self.root.after(0, lambda: self.update_status("添加直播间失败", "error"))
                 self.root.after(0, lambda: self.log_to_console(f"【错误】添加直播间失败: {e}"))
 
         threading.Thread(target=get_room_info, daemon=True).start()
@@ -333,7 +660,7 @@ class LiveStreamUI:
                     room_status = room_status_info.get('room_status', 2)
                     nickname = room_status_info.get('nickname', '未知主播')
 
-                    if room_status != 0:  # 0表示正在直播，其他状态表示已结束
+                    if room_status != 0: # 0表示正在直播，其他状态表示已结束
                         self.root.after(0, lambda: self.log_to_console(f"【停止】直播间 {live_id} ({nickname}) 未在直播，无法开始采集"))
                         self.root.after(0, lambda: messagebox.showinfo("提示", f"直播间 {live_id} ({nickname}) 未在直播，无法开始采集"))
                         return
@@ -441,12 +768,12 @@ class LiveStreamUI:
 
         # 添加直播间
         for live_id, info in self.live_streams.items():
-            # 区分采集状态和直播状态
-            collection_status = "采集中" if live_id in self.live_fetchers else info.get("status", "未开始采集")
+            collection_status = "🟢 采集中" if live_id in self.live_fetchers else "⚪ " + info.get("status", "未开始采集")
             live_status = info.get("live_status", "未知状态")
 
-            # 在用户名后显示直播状态
-            username_display = f"{info.get('username', '未知')} ({live_status})"
+            # 状态图标
+            status_icon = "🔴" if live_status == "已结束" else "🟢"
+            username_display = f"{status_icon} {info.get('username', '未知')} ({live_status})"
 
             self.tree.insert("", "end", values=(
                 live_id,
@@ -509,8 +836,29 @@ class LiveStreamUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.log_to_console("【启动】抖音直播间弹幕采集工具已启动")
         self.log_to_console("【提示】请先选择一个直播间，控制台将只显示选中直播间的日志")
+        self.update_status("应用程序已启动，请添加直播间开始使用", "success")
         self.root.mainloop()
 
+    def on_tree_select(self, event):
+        """树形列表选择事件"""
+        selected = self.tree.selection()
+        if selected:
+            item = self.tree.item(selected[0])
+            new_selected_id = str(item['values'][0])
+
+            # 如果选中的直播间发生变化，清空控制台并显示提示
+            if self.selected_live_id != new_selected_id:
+                self.selected_live_id = new_selected_id
+                self.console_text.delete('1.0', tk.END)
+                self.log_to_console(f"【选择】已切换到直播间: {self.selected_live_id}")
+                self.update_status(f"已选择直播间: {self.selected_live_id}", "info")
+
+                # 如果选中的直播间正在采集，显示当前状态
+                if self.selected_live_id in self.live_fetchers:
+                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 正在采集中")
+                    self.update_status(f"直播间 {self.selected_live_id} 正在采集中", "success")
+                else:
+                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 未开始采集")
 
 class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
     """自定义的DouyinLiveWebFetcher，支持日志回调"""
