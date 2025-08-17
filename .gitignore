@@ -7,3 +7,7 @@ package-lock.json
 .venv
 .DS_Store
 *.pyc
+
+data/
+live_config.json
+live_config.json

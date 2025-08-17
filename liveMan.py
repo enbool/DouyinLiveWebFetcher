@@ -109,8 +109,13 @@ class DouyinLiveWebFetcher:
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
                           "Chrome/120.0.0.0 Safari/537.36"
 
-        # 初始化Excel文件（只使用live_id，不包含时间戳）
-        self.excel_file = f"douyin_live_{self.live_id}.xlsx"
+        # 创建data目录（如果不存在）
+        self.data_dir = "data"
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+
+        # 初始化Excel文件（存储在data目录下）
+        self.excel_file = os.path.join(self.data_dir, f"douyin_live_{self.live_id}.xlsx")
         self._init_excel()
 
         # 只在非UI模式且为主线程时注册信号处理器
@@ -120,11 +125,11 @@ class DouyinLiveWebFetcher:
                 signal.signal(signal.SIGTERM, self._signal_handler)
             except ValueError as e:
                 # 如果不在主线程中，忽略信号处理器注册错误
-                print(f"【提示】无法注册信号处理器: {e}")
+                print(f"【异常】无法注册信号处理器: {e}")
 
     def _signal_handler(self, signum, frame):
         """处理程序中断信号"""
-        print(f"\n【!】接收到信号 {signum}，正在保存Excel文件...")
+        print(f"\n【异常】接收到信号 {signum}，正在保存Excel文件...")
         self.save_excel()
         sys.exit(0)
 
@@ -133,7 +138,7 @@ class DouyinLiveWebFetcher:
         try:
             # 检查文件是否存在
             if os.path.exists(self.excel_file):
-                print(f"【√】发现已存在的Excel文件: {self.excel_file}，将继续追加数据")
+                print(f"【系统】发现已存在的Excel文件: {self.excel_file}，将继续追加数据")
                 # 加载现有文件
                 self.workbook = load_workbook(self.excel_file)
 
@@ -161,7 +166,7 @@ class DouyinLiveWebFetcher:
                     self.fanclub_sheet.append(["时间", "消息内容"])
 
             else:
-                print(f"【√】创建新的Excel文件: {self.excel_file}")
+                print(f"【系统】创建新的Excel文件: {self.excel_file}")
                 # 创建新文件
                 self.workbook = Workbook()
                 # 删除默认工作表
@@ -181,35 +186,35 @@ class DouyinLiveWebFetcher:
                 self.follow_sheet.append(["时间", "用户ID", "用户名", "sec_uid", "用户主页"])
                 self.fanclub_sheet.append(["时间", "消息内容"])
 
-            print(f"【√】Excel文件初始化成功: {self.excel_file}")
+            print(f"【系统】Excel文件初始化成功: {self.excel_file}")
         except Exception as e:
-            print(f"【X】Excel文件初始化失败: {e}")
+            print(f"【异常】Excel文件初始化失败: {e}")
 
     def save_excel(self):
         """保存Excel文件"""
         try:
             self.workbook.save(self.excel_file)
-            print(f"【√】Excel文件已保存: {self.excel_file}")
+            print(f"【系统】Excel文件已保存: {self.excel_file}")
         except Exception as e:
-            print(f"【X】Excel文件保存失败: {e}")
+            print(f"【异常】Excel文件保存失败: {e}")
 
     def start(self):
         try:
             self._connectWebSocket()
         except KeyboardInterrupt:
-            print("\n【!】用户手动停止程序")
+            print("\n【异常】用户手动停止程序")
             self.stop()
         except Exception as e:
-            print(f"【X】程序运行出错: {e}")
+            print(f"【异常】程序运行出错: {e}")
             self.stop()
             raise
 
     def stop(self):
-        print("【!】正在停止程序并保存数据...")
+        print("【系统】正在停止程序并保存数据...")
         if hasattr(self, 'ws'):
             self.ws.close()
         self.save_excel()
-        print("【√】程序已停止")
+        print("【系统】程序已停止")
 
     @property
     def ttwid(self):
@@ -263,27 +268,41 @@ class DouyinLiveWebFetcher:
         获取直播间开播状态:
         room_status: 2 直播已结束
         room_status: 0 直播进行中
+        :return: 包含主播信息和直播状态的字典
         """
-        url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
-               '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
-               '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
-               '&browser_name=Edge&browser_version=133.0.0.0'
-               f'&web_rid={self.live_id}'
-               f'&room_id_str={self.room_id}'
-               '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
-               '&msToken=&a_bogus=')
-        resp = requests.get(url, headers={
-            'User-Agent': self.user_agent,
-            'Cookie': f'ttwid={self.ttwid};'
-        })
-        data = resp.json().get('data')
-        if data:
-            room_status = data.get('room_status')
-            user = data.get('user')
-            user_id = user.get('id_str')
-            nickname = user.get('nickname')
-            print(f"【{nickname}】[{user_id}]直播间：{['正在直播', '已结束'][bool(room_status)]}.")
-    
+        try:
+            url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
+                   '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
+                   '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
+                   '&browser_name=Edge&browser_version=133.0.0.0'
+                   f'&web_rid={self.live_id}'
+                   f'&room_id_str={self.room_id}'
+                   '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
+                   '&msToken=&a_bogus=')
+            resp = requests.get(url, headers={
+                'User-Agent': self.user_agent,
+                'Cookie': f'ttwid={self.ttwid};'
+            })
+            data = resp.json().get('data')
+            if data:
+                room_status = data.get('room_status')
+                user = data.get('user')
+                user_id = user.get('id_str')
+                nickname = user.get('nickname')
+                status_text = ['正在直播', '已结束'][bool(room_status)]
+                print(f"【{nickname}】[{user_id}]直播间：{status_text}.")
+
+                # 返回详细信息供UI使用
+                return {
+                    'room_status': room_status,
+                    'user_id': user_id,
+                    'nickname': nickname,
+                    'status_text': status_text
+                }
+        except Exception as e:
+            print(f"【异常】获取房间状态失败: {e}")
+        return None
+
     def _connectWebSocket(self):
         """
         连接抖音直播间websocket服务器，请求直播间数据
@@ -331,67 +350,67 @@ class DouyinLiveWebFetcher:
             try:
                 heartbeat = PushFrame(payload_type='hb').SerializeToString()
                 self.ws.send(heartbeat, websocket.ABNF.OPCODE_PING)
-                print("【√】发送心跳包")
             except Exception as e:
-                print("【X】心跳包检测错误: ", e)
+                print("【异常】心跳包检测错误: ", e)
                 break
             else:
                 time.sleep(5)
-    
+
     def _wsOnOpen(self, ws):
         """
         连接建立成功
         """
-        print("【√】WebSocket连接成功.")
         threading.Thread(target=self._sendHeartbeat).start()
-    
+
     def _wsOnMessage(self, ws, message):
         """
         接收到数据
         :param ws: websocket实例
         :param message: 数据
         """
-        
-        # 根据proto结构体解析对象
-        package = PushFrame().parse(message)
-        response = Response().parse(gzip.decompress(package.payload))
-        
-        # 返回直播间服务器链接存活确认消息，便于持续获取数据
-        if response.need_ack:
-            ack = PushFrame(log_id=package.log_id,
-                            payload_type='ack',
-                            payload=response.internal_ext.encode('utf-8')
-                            ).SerializeToString()
-            ws.send(ack, websocket.ABNF.OPCODE_BINARY)
-        
-        # 根据消息类别解析消息体
-        for msg in response.messages_list:
-            method = msg.method
-            try:
-                {
-                    'WebcastChatMessage': self._parseChatMsg,  # 聊天消息
-                    'WebcastGiftMessage': self._parseGiftMsg,  # 礼物消息
-                    'WebcastLikeMessage': self._parseLikeMsg,  # 点赞消息
-                    'WebcastMemberMessage': self._parseMemberMsg,  # 进入直播间消息
-                    'WebcastSocialMessage': self._parseSocialMsg,  # 关注消息
-                    'WebcastRoomUserSeqMessage': self._parseRoomUserSeqMsg,  # 直播间统计
-                    'WebcastFansclubMessage': self._parseFansclubMsg,  # 粉丝团消息
-                    'WebcastControlMessage': self._parseControlMsg,  # 直播间状态消息
-                    'WebcastEmojiChatMessage': self._parseEmojiChatMsg,  # 聊天表情包消息
-                    'WebcastRoomStatsMessage': self._parseRoomStatsMsg,  # 直播间统计信息
-                    'WebcastRoomMessage': self._parseRoomMsg,  # 直播间信息
-                    'WebcastRoomRankMessage': self._parseRankMsg,  # 直播间排行榜信息
-                    'WebcastRoomStreamAdaptationMessage': self._parseRoomStreamAdaptationMsg,  # 直播间流配置
-                }.get(method)(msg.payload)
-            except Exception:
-                pass
-    
+        try:
+            # 根据proto结构体解析对象
+            package = PushFrame().parse(message)
+            response = Response().parse(gzip.decompress(package.payload))
+
+            # 返回直播间服务器链接存活确认消息，便于持续获取数据
+            if response.need_ack:
+                ack = PushFrame(log_id=package.log_id,
+                                payload_type='ack',
+                                payload=response.internal_ext.encode('utf-8')
+                                ).SerializeToString()
+                ws.send(ack, websocket.ABNF.OPCODE_BINARY)
+
+            # 根据消息类别解析消息体
+            for msg in response.messages_list:
+                method = msg.method
+                try:
+                    {
+                        'WebcastChatMessage': self._parseChatMsg,  # 聊天消息
+                        'WebcastGiftMessage': self._parseGiftMsg,  # 礼物消息
+                        'WebcastLikeMessage': self._parseLikeMsg,  # 点赞消息
+                        'WebcastMemberMessage': self._parseMemberMsg,  # 进入直播间消息
+                        'WebcastSocialMessage': self._parseSocialMsg,  # 关注消息
+                        'WebcastRoomUserSeqMessage': self._parseRoomUserSeqMsg,  # 直播间统计
+                        'WebcastFansclubMessage': self._parseFansclubMsg,  # 粉丝团消息
+                        'WebcastControlMessage': self._parseControlMsg,  # 直播间状态消息
+                        'WebcastEmojiChatMessage': self._parseEmojiChatMsg,  # 聊天表情包消息
+                        'WebcastRoomStatsMessage': self._parseRoomStatsMsg,  # 直播间统计信息
+                        'WebcastRoomMessage': self._parseRoomMsg,  # 直播间信息
+                        'WebcastRoomRankMessage': self._parseRankMsg,  # 直播间排行榜信息
+                        'WebcastRoomStreamAdaptationMessage': self._parseRoomStreamAdaptationMsg,  # 直播间流配置
+                    }.get(method)(msg.payload)
+                except Exception as e:
+                    print(f"【异常】处理消息 {method} 时出错: {e}")
+        except Exception as e:
+            print(f"【异常】解析WebSocket消息失败: {e}")
+
     def _wsOnError(self, ws, error):
-        print("WebSocket error: ", error)
-    
+        print("【异常】WebSocket错误: ", error)
+
     def _wsOnClose(self, ws, *args):
         self.get_room_status()
-        print("WebSocket connection closed.")
+        print("【异常】WebSocket连接已关闭")
         # 连接关闭时自动保存
         self.save_excel()
 
@@ -411,7 +430,7 @@ class DouyinLiveWebFetcher:
         try:
             self.chat_sheet.append([current_time, user_id, user_name, sec_uid, user_homepage, content])
         except Exception as e:
-            print(f"【X】保存聊天消息到Excel失败: {e}")
+            print(f"【异常】保存聊天消息到Excel失败: {e}")
 
     def _parseGiftMsg(self, payload):
         """礼物消息"""
@@ -429,7 +448,7 @@ class DouyinLiveWebFetcher:
         try:
             self.gift_sheet.append([current_time, user_name, sec_uid, user_homepage, gift_name, gift_cnt])
         except Exception as e:
-            print(f"【X】保存礼物消息到Excel失败: {e}")
+            print(f"【异常】保存礼物消息到Excel失败: {e}")
 
     def _parseLikeMsg(self, payload):
         '''点赞消息'''
@@ -446,7 +465,7 @@ class DouyinLiveWebFetcher:
         try:
             self.like_sheet.append([current_time, user_name, sec_uid, user_homepage, count])
         except Exception as e:
-            print(f"【X】保存点赞消息到Excel失败: {e}")
+            print(f"【异常】保存点赞消息到Excel失败: {e}")
 
     def _parseMemberMsg(self, payload):
         '''进入直播间消息'''
@@ -455,7 +474,7 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         gender = ["女", "男"][message.user.gender]
         print(f"【进场msg】[{user_id}][{gender}]{user_name} 进入了直播间")
-    
+
     def _parseSocialMsg(self, payload):
         '''关注消息'''
         message = SocialMessage().parse(payload)
@@ -471,7 +490,7 @@ class DouyinLiveWebFetcher:
         try:
             self.follow_sheet.append([current_time, user_id, user_name, sec_uid, user_homepage])
         except Exception as e:
-            print(f"【X】保存关注消息到Excel失败: {e}")
+            print(f"【异常】保存关注消息到Excel失败: {e}")
 
     def _parseRoomUserSeqMsg(self, payload):
         '''直播间统计'''
@@ -479,7 +498,7 @@ class DouyinLiveWebFetcher:
         current = message.total
         total = message.total_pv_for_anchor
         print(f"【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
-    
+
     def _parseFansclubMsg(self, payload):
         '''粉丝团消息'''
         message = FansclubMessage().parse(payload)
@@ -492,7 +511,7 @@ class DouyinLiveWebFetcher:
         try:
             self.fanclub_sheet.append([current_time, content])
         except Exception as e:
-            print(f"【X】保存粉丝团消息到Excel失败: {e}")
+            print(f"【异常】保存粉丝团消息到Excel失败: {e}")
 
     def _parseEmojiChatMsg(self, payload):
         '''聊天表情包消息'''
@@ -501,34 +520,31 @@ class DouyinLiveWebFetcher:
         user = message.user
         common = message.common
         default_content = message.default_content
-        print(f"【聊天表情包id】 {emoji_id},user：{user},common:{common},default_content:{default_content}")
-    
+        print(f"【表情包msg】emoji_id: {emoji_id}, default_content: {default_content}")
+
     def _parseRoomMsg(self, payload):
-        message = RoomMessage().parse(payload)
-        common = message.common
-        room_id = common.room_id
-        print(f"【直播间msg】直播间id:{room_id}")
-    
+        # 静默处理，不打印日志
+        pass
+
     def _parseRoomStatsMsg(self, payload):
-        message = RoomStatsMessage().parse(payload)
-        display_long = message.display_long
-        print(f"【直播间统计msg】{display_long}")
-    
+        # 静默处理，不打印日志
+        pass
+
     def _parseRankMsg(self, payload):
-        message = RoomRankMessage().parse(payload)
-        ranks_list = message.ranks_list
-        print(f"【直播间排行榜msg】{ranks_list}")
-    
+        # 静默处理，不打印日志
+        pass
+
     def _parseControlMsg(self, payload):
         '''直播间状态消息'''
         message = ControlMessage().parse(payload)
-        
+
         if message.status == 3:
-            print("直播间已结束")
+            print("【控制msg】直播间已结束")
             self.save_excel()
             self.stop()
-    
+        else:
+            print(f"【控制msg】直播间状态变更: {message.status}")
+
     def _parseRoomStreamAdaptationMsg(self, payload):
-        message = RoomStreamAdaptationMessage().parse(payload)
-        adaptationType = message.adaptation_type
-        print(f'直播间adaptation: {adaptationType}')
+        # 静默处理，不打印日志
+        pass

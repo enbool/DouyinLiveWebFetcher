@@ -46,16 +46,12 @@ class LiveStreamUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(0, weight=1)
         main_frame.rowconfigure(1, weight=1)
-        main_frame.rowconfigure(2, weight=1)
-
-        # 标题
-        title_label = ttk.Label(main_frame, text="抖音直播间弹幕采集工具", font=('Arial', 16, 'bold'))
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
 
         # 上半部分框架：直播间列表和控制按钮
         top_frame = ttk.Frame(main_frame)
-        top_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        top_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         top_frame.columnconfigure(0, weight=1)
         top_frame.rowconfigure(0, weight=1)
 
@@ -106,7 +102,7 @@ class LiveStreamUI:
 
         # 下半部分：控制台日志框架
         console_frame = ttk.LabelFrame(main_frame, text="控制台日志", padding="10")
-        console_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        console_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         console_frame.columnconfigure(0, weight=1)
         console_frame.rowconfigure(0, weight=1)
 
@@ -121,12 +117,6 @@ class LiveStreamUI:
         )
         self.console_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-        # 状态栏
-        self.status_var = tk.StringVar()
-        self.status_var.set("就绪")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
-
         # 双击事件绑定
         self.tree.bind('<Double-1>', self.on_double_click)
 
@@ -134,7 +124,7 @@ class LiveStreamUI:
         """显示添加直播间对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.title("添加直播间")
-        dialog.geometry("300x150")
+        dialog.geometry("320x180")  # 增加窗口高度从150到180，宽度从300到320
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
@@ -146,16 +136,16 @@ class LiveStreamUI:
         ))
 
         # 对话框内容
-        ttk.Label(dialog, text="请输入直播间ID:", font=('Arial', 12)).pack(pady=20)
+        ttk.Label(dialog, text="请输入直播间ID:", font=('Arial', 12)).pack(pady=(20, 10))  # 调整上下边距
 
         live_id_var = tk.StringVar()
         entry = ttk.Entry(dialog, textvariable=live_id_var, width=25, font=('Arial', 11))
-        entry.pack(pady=10)
+        entry.pack(pady=(0, 15))  # 调整下边距
         entry.focus()
 
         # 按钮框架
         btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=(10, 20))  # 增加上下边距
 
         def on_add():
             live_id = live_id_var.get().strip()
@@ -168,8 +158,8 @@ class LiveStreamUI:
         def on_cancel():
             dialog.destroy()
 
-        ttk.Button(btn_frame, text="添加", command=on_add).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="添加", command=on_add).pack(side=tk.LEFT, padx=10)  # 增加按钮间距
+        ttk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=10)
 
         # 绑定回车键
         entry.bind('<Return>', lambda e: on_add())
@@ -180,11 +170,27 @@ class LiveStreamUI:
         selected = self.tree.selection()
         if selected:
             item = self.tree.item(selected[0])
-            self.selected_live_id = str(item['values'][0])
-            self.log_to_console(f"【选择】选中直播间: {self.selected_live_id}")
+            new_selected_id = str(item['values'][0])
 
-    def log_to_console(self, message):
-        """输出日志到控制台"""
+            # 如果选中的直播间发生变化，清空控制台并显示提示
+            if self.selected_live_id != new_selected_id:
+                self.selected_live_id = new_selected_id
+                self.console_text.delete('1.0', tk.END)
+                self.log_to_console(f"【选择】已切换到直播间: {self.selected_live_id}")
+
+                # 如果选中的直播间正在采集，显示当前状态
+                if self.selected_live_id in self.live_fetchers:
+                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 正在采集中")
+                else:
+                    self.log_to_console(f"【状态】直播间 {self.selected_live_id} 未开始采集")
+
+    def log_to_console(self, message, live_id=None):
+        """输出日志到控制台 - 只显示当前选中直播间的日志"""
+        # 如果指定了live_id，只有当它是当前选中的直播间时才显示
+        if live_id and live_id != self.selected_live_id:
+            return
+
+        # 如果没有指定live_id，表示是系统日志，总是显示
         current_time = datetime.now().strftime('%H:%M:%S')
         log_message = f"[{current_time}] {message}\n"
 
@@ -202,8 +208,12 @@ class LiveStreamUI:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     self.live_streams = json.load(f)
+
+                # 更新Excel文件路径到data目录
+                for live_id, info in self.live_streams.items():
+                    info['excel_file'] = os.path.join("data", f"douyin_live_{live_id}.xlsx")
+
                 self.refresh_tree()
-                self.status_var.set(f"已加载 {len(self.live_streams)} 个直播间")
                 self.log_to_console(f"【加载】加载了 {len(self.live_streams)} 个直播间配置")
         except Exception as e:
             messagebox.showerror("错误", f"加载配置失败: {e}")
@@ -230,31 +240,40 @@ class LiveStreamUI:
             return
 
         # 获取直播间信息
-        self.status_var.set(f"正在获取直播间 {live_id} 信息...")
         self.log_to_console(f"【添加】正在获取直播间 {live_id} 信息...")
 
         def get_room_info():
             try:
                 fetcher = DouyinLiveWebFetcher(live_id, ui_mode=True)
-                fetcher.get_room_status()
+
+                # 调用get_room_status获取直播间状态和主播信息
+                room_status_info = fetcher.get_room_status()
+
+                # 解析返回的信息
+                username = "未知主播"
+                live_status = "未知状态"
+
+                if room_status_info:
+                    username = room_status_info.get('nickname', '未知主播')
+                    room_status = room_status_info.get('room_status', 2)
+                    live_status = "正在直播" if room_status == 0 else "已结束"
 
                 # 添加到列表
                 self.live_streams[live_id] = {
                     "live_id": live_id,
-                    "username": "获取中...",
-                    "status": "未开始",
-                    "excel_file": f"douyin_live_{live_id}.xlsx",
+                    "username": username,
+                    "status": "未开始采集",
+                    "live_status": live_status,
+                    "excel_file": os.path.join("data", f"douyin_live_{live_id}.xlsx"),
                     "added_time": datetime.now().isoformat()
                 }
 
                 self.root.after(0, lambda: self.refresh_tree())
                 self.root.after(0, lambda: self.save_config())
-                self.root.after(0, lambda: self.status_var.set(f"已添加直播间 {live_id}"))
-                self.root.after(0, lambda: self.log_to_console(f"【添加】成功添加直播间 {live_id}"))
+                self.root.after(0, lambda: self.log_to_console(f"【添加】成功添加直播间 {live_id} - {username}({live_status})"))
 
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("错误", f"添加直播间失败: {e}"))
-                self.root.after(0, lambda: self.status_var.set("就绪"))
                 self.root.after(0, lambda: self.log_to_console(f"【错误】添加直播间失败: {e}"))
 
         threading.Thread(target=get_room_info, daemon=True).start()
@@ -282,7 +301,6 @@ class LiveStreamUI:
 
             self.refresh_tree()
             self.save_config()
-            self.status_var.set(f"已删除直播间 {live_id}")
             self.log_to_console(f"【删除】删除直播间 {live_id}")
 
     def start_collection(self):
@@ -299,19 +317,43 @@ class LiveStreamUI:
             messagebox.showinfo("提示", "该直播间正在采集中")
             return
 
-        self.log_to_console(f"【开始】启动直播间 {live_id} 的采集")
+        self.log_to_console(f"【开始】检查直播间 {live_id} 的状态...")
 
         def start_fetcher():
             try:
-                # 创建自定义的DouyinLiveWebFetcher，重定向输出到控制台
-                fetcher = CustomDouyinLiveWebFetcher(live_id, ui_mode=True, log_callback=self.log_to_console)
+                # 创建fetcher并检查直播状态
+                def log_callback(message):
+                    self.root.after(0, lambda: self.log_to_console(message, live_id))
+
+                fetcher = CustomDouyinLiveWebFetcher(live_id, ui_mode=True, log_callback=log_callback)
+
+                # 检查直播间状态
+                room_status_info = fetcher.get_room_status()
+                if room_status_info:
+                    room_status = room_status_info.get('room_status', 2)
+                    nickname = room_status_info.get('nickname', '未知主播')
+
+                    if room_status != 0:  # 0表示正在直播，其他状态表示已结束
+                        self.root.after(0, lambda: self.log_to_console(f"【停止】直播间 {live_id} ({nickname}) 未在直播，无法开始采集"))
+                        self.root.after(0, lambda: messagebox.showinfo("提示", f"直播间 {live_id} ({nickname}) 未在直播，无法开始采集"))
+                        return
+                    else:
+                        self.root.after(0, lambda: self.log_to_console(f"【检查】直播间 {live_id} ({nickname}) 正在直播，开始采集..."))
+                else:
+                    self.root.after(0, lambda: self.log_to_console(f"【停止】无法获取直播间 {live_id} 状态，无法开始采集"))
+                    self.root.after(0, lambda: messagebox.showerror("错误", f"无法获取直播间 {live_id} 状态"))
+                    return
+
+                # 添加到采集列表
                 self.live_fetchers[live_id] = fetcher
+
+                # 设置停止回调，当直播结束时自动清理
+                fetcher.set_stop_callback(lambda: self.auto_stop_collection(live_id))
 
                 # 更新状态
                 if live_id in self.live_streams:  # 添加安全检查
                     self.live_streams[live_id]["status"] = "采集中"
                 self.root.after(0, lambda: self.refresh_tree())
-                self.root.after(0, lambda: self.status_var.set(f"开始采集直播间 {live_id}"))
 
                 # 开始采集
                 fetcher.start()
@@ -323,10 +365,25 @@ class LiveStreamUI:
                 if live_id in self.live_streams:  # 添加安全检查
                     self.live_streams[live_id]["status"] = "已停止"
                 self.root.after(0, lambda: self.refresh_tree())
-                self.root.after(0, lambda: self.status_var.set(f"直播间 {live_id} 采集已停止"))
                 self.root.after(0, lambda: self.log_to_console(f"【停止】直播间 {live_id} 采集已停止: {e}"))
 
         threading.Thread(target=start_fetcher, daemon=True).start()
+
+    def auto_stop_collection(self, live_id):
+        """自动停止采集（当直播结束时调用）"""
+        def stop_task():
+            if live_id in self.live_fetchers:
+                try:
+                    del self.live_fetchers[live_id]
+                    if live_id in self.live_streams:
+                        self.live_streams[live_id]["status"] = "已停止"
+                    self.refresh_tree()
+                    self.log_to_console(f"【自动停止】直播间 {live_id} 已结束，自动停止采集")
+                except Exception as e:
+                    self.log_to_console(f"【错误】自动停止采集失败: {e}")
+
+        # 在主线程中执行停止操作
+        self.root.after(0, stop_task)
 
     def stop_collection(self):
         """停止采集"""
@@ -349,7 +406,6 @@ class LiveStreamUI:
             if live_id in self.live_streams:  # 添加安全检查
                 self.live_streams[live_id]["status"] = "已停止"
             self.refresh_tree()
-            self.status_var.set(f"已停止采集直播间 {live_id}")
             self.log_to_console(f"【停止】手动停止直播间 {live_id} 的采集")
 
         except Exception as e:
@@ -366,7 +422,7 @@ class LiveStreamUI:
                 subprocess.run(["open", current_dir])
             else:
                 subprocess.run(["xdg-open", current_dir])
-            self.status_var.set("已打开Excel文件夹")
+            self.log_to_console("已打开Excel文件夹")
         except Exception as e:
             messagebox.showerror("错误", f"打开文件夹失败: {e}")
 
@@ -375,7 +431,6 @@ class LiveStreamUI:
         self.refresh_tree()
         active_count = len(self.live_fetchers)
         total_count = len(self.live_streams)
-        self.status_var.set(f"总计 {total_count} 个直播间，{active_count} 个正在采集")
         self.log_to_console(f"【刷新】总计 {total_count} 个直播间，{active_count} 个正在采集")
 
     def refresh_tree(self):
@@ -386,12 +441,18 @@ class LiveStreamUI:
 
         # 添加直播间
         for live_id, info in self.live_streams.items():
-            status = "采集中" if live_id in self.live_fetchers else info.get("status", "未开始")
+            # 区分采集状态和直播状态
+            collection_status = "采集中" if live_id in self.live_fetchers else info.get("status", "未开始采集")
+            live_status = info.get("live_status", "未知状态")
+
+            # 在用户名后显示直播状态
+            username_display = f"{info.get('username', '未知')} ({live_status})"
+
             self.tree.insert("", "end", values=(
                 live_id,
-                info.get("username", "未知"),
-                status,
-                info.get("excel_file", f"douyin_live_{live_id}.xlsx")
+                username_display,
+                collection_status,
+                info.get("excel_file", os.path.join("data", f"douyin_live_{live_id}.xlsx"))
             ))
 
     def on_double_click(self, event):
@@ -404,6 +465,10 @@ class LiveStreamUI:
         live_id = str(item['values'][0])  # 确保live_id是字符串类型
         excel_file = item['values'][3]
 
+        # 确保Excel文件路径正确
+        if not excel_file.startswith("data"):
+            excel_file = os.path.join("data", f"douyin_live_{live_id}.xlsx")
+
         # 尝试打开Excel文件
         try:
             if os.path.exists(excel_file):
@@ -413,10 +478,9 @@ class LiveStreamUI:
                     subprocess.run(["open", excel_file])
                 else:
                     subprocess.run(["xdg-open", excel_file])
-                self.status_var.set(f"已打开 {excel_file}")
                 self.log_to_console(f"【打开】打开Excel文件: {excel_file}")
             else:
-                messagebox.showinfo("提示", f"Excel文件不存在: {excel_file}")
+                messagebox.showinfo("提示", f"Excel文件不存在: {excel_file}\n请先开始采集以生成Excel文件")
                 self.log_to_console(f"【提示】Excel文件不存在: {excel_file}")
         except Exception as e:
             messagebox.showerror("错误", f"打开Excel文件失败: {e}")
@@ -444,6 +508,7 @@ class LiveStreamUI:
         """运行界面"""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.log_to_console("【启动】抖音直播间弹幕采集工具已启动")
+        self.log_to_console("【提示】请先选择一个直播间，控制台将只显示选中直播间的日志")
         self.root.mainloop()
 
 
@@ -452,7 +517,12 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
 
     def __init__(self, live_id, ui_mode=False, log_callback=None):
         self.log_callback = log_callback
+        self.stop_callback = None
         super().__init__(live_id, ui_mode)
+
+    def set_stop_callback(self, callback):
+        """设置停止回调函数"""
+        self.stop_callback = callback
 
     def log(self, message):
         """输出日志"""
@@ -592,7 +662,17 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
         if message.status == 3:
             self.log("【控制msg】直播间已结束")
             self.save_excel()
-            self.stop()
+
+            # 调用停止回调函数
+            if self.stop_callback:
+                self.stop_callback()
+
+            # 停止WebSocket连接
+            if hasattr(self, 'ws'):
+                try:
+                    self.ws.close()
+                except:
+                    pass
         else:
             self.log(f"【控制msg】直播间状态变更: {message.status}")
 
@@ -684,26 +764,38 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
         room_status: 2 直播已结束
         room_status: 0 直播进行中
         """
-        url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
-               '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
-               '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
-               '&browser_name=Edge&browser_version=133.0.0.0'
-               f'&web_rid={self.live_id}'
-               f'&room_id_str={self.room_id}'
-               '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
-               '&msToken=&a_bogus=')
-        resp = requests.get(url, headers={
-            'User-Agent': self.user_agent,
-            'Cookie': f'ttwid={self.ttwid};'
-        })
-        data = resp.json().get('data')
-        if data:
-            room_status = data.get('room_status')
-            user = data.get('user')
-            user_id = user.get('id_str')
-            nickname = user.get('nickname')
-            status_text = ['正在直播', '已结束'][bool(room_status)]
-            self.log(f"【房间状态】{nickname}[{user_id}]直播间：{status_text}")
+        try:
+            url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
+                   '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
+                   '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
+                   '&browser_name=Edge&browser_version=133.0.0.0'
+                   f'&web_rid={self.live_id}'
+                   f'&room_id_str={self.room_id}'
+                   '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
+                   '&msToken=&a_bogus=')
+            resp = requests.get(url, headers={
+                'User-Agent': self.user_agent,
+                'Cookie': f'ttwid={self.ttwid};'
+            })
+            data = resp.json().get('data')
+            if data:
+                room_status = data.get('room_status')
+                user = data.get('user')
+                user_id = user.get('id_str')
+                nickname = user.get('nickname')
+                status_text = ['正在直播', '已结束'][bool(room_status)]
+                self.log(f"【房间状态】{nickname}[{user_id}]直播间：{status_text}")
+
+                # 返回详细信息供UI使用
+                return {
+                    'room_status': room_status,
+                    'user_id': user_id,
+                    'nickname': nickname,
+                    'status_text': status_text
+                }
+        except Exception as e:
+            self.log(f"【异常】获取房间状态失败: {e}")
+        return None
 
 if __name__ == "__main__":
     app = LiveStreamUI()
