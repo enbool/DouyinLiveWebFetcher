@@ -6,10 +6,10 @@
 # @Author:      bubu
 # @Project:     douyinLiveWebFetcher
 
-from liveMan import DouyinLiveWebFetcher
+from ui_main import LiveStreamUI
 
 if __name__ == '__main__':
-    live_id = '91046108832'
-    room = DouyinLiveWebFetcher(live_id)
-    room.get_room_status()
-    room.start()
+    print("【启动】抖音直播间弹幕采集工具 UI版本")
+    app = LiveStreamUI()
+    app.run()
+

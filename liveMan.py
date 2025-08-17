@@ -18,10 +18,15 @@ import time
 import urllib.parse
 from contextlib import contextmanager
 from unittest.mock import patch
+from datetime import datetime
+import os
+import signal
+import sys
 
 import requests
 import websocket
 from py_mini_racer import MiniRacer
+from openpyxl import Workbook, load_workbook
 
 from protobuf.douyin import *
 
@@ -89,25 +94,123 @@ def generateMsToken(length=107):
 
 class DouyinLiveWebFetcher:
     
-    def __init__(self, live_id):
+    def __init__(self, live_id, ui_mode=False):
         """
         直播间弹幕抓取对象
         :param live_id: 直播间的直播id，打开直播间web首页的链接如：https://live.douyin.com/261378947940，
                         其中的261378947940即是live_id
+        :param ui_mode: 是否为UI模式
         """
         self.__ttwid = None
         self.__room_id = None
-        self.live_id = live_id
+        self.live_id = str(live_id)  # 确保live_id是字符串类型
+        self.ui_mode = ui_mode
         self.live_url = "https://live.douyin.com/"
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
                           "Chrome/120.0.0.0 Safari/537.36"
-    
+
+        # 初始化Excel文件（只使用live_id，不包含时间戳）
+        self.excel_file = f"douyin_live_{self.live_id}.xlsx"
+        self._init_excel()
+
+        # 只在非UI模式且为主线程时注册信号处理器
+        if not ui_mode and threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, self._signal_handler)
+                signal.signal(signal.SIGTERM, self._signal_handler)
+            except ValueError as e:
+                # 如果不在主线程中，忽略信号处理器注册错误
+                print(f"【提示】无法注册信号处理器: {e}")
+
+    def _signal_handler(self, signum, frame):
+        """处理程序中断信号"""
+        print(f"\n【!】接收到信号 {signum}，正在保存Excel文件...")
+        self.save_excel()
+        sys.exit(0)
+
+    def _init_excel(self):
+        """初始化Excel文件和工作表"""
+        try:
+            # 检查文件是否存在
+            if os.path.exists(self.excel_file):
+                print(f"【√】发现已存在的Excel文件: {self.excel_file}，将继续追加数据")
+                # 加载现有文件
+                self.workbook = load_workbook(self.excel_file)
+
+                # 获取现有工作表，如果不存在则创建
+                self.chat_sheet = self.workbook["聊天消息"] if "聊天消息" in self.workbook.sheetnames else self.workbook.create_sheet("聊天消息")
+                self.gift_sheet = self.workbook["礼物消息"] if "礼物消息" in self.workbook.sheetnames else self.workbook.create_sheet("礼物消息")
+                self.like_sheet = self.workbook["点赞消息"] if "点赞消息" in self.workbook.sheetnames else self.workbook.create_sheet("点赞消息")
+                self.follow_sheet = self.workbook["关注消息"] if "关注消息" in self.workbook.sheetnames else self.workbook.create_sheet("关注消息")
+                self.fanclub_sheet = self.workbook["粉丝团消息"] if "粉丝团消息" in self.workbook.sheetnames else self.workbook.create_sheet("粉丝团消息")
+
+                # 删除默认工作表（如果存在）
+                if "Sheet" in self.workbook.sheetnames:
+                    self.workbook.remove(self.workbook["Sheet"])
+
+                # 检查并添加表头（如果工作表为空）
+                if self.chat_sheet.max_row == 1 and not any(self.chat_sheet[1]):
+                    self.chat_sheet.append(["时间", "用户ID", "用户名", "sec_uid", "用户主页", "消息内容"])
+                if self.gift_sheet.max_row == 1 and not any(self.gift_sheet[1]):
+                    self.gift_sheet.append(["时间", "用户名", "sec_uid", "用户主页", "礼物名称", "礼物数量"])
+                if self.like_sheet.max_row == 1 and not any(self.like_sheet[1]):
+                    self.like_sheet.append(["时间", "用户名", "sec_uid", "用户主页", "点赞数量"])
+                if self.follow_sheet.max_row == 1 and not any(self.follow_sheet[1]):
+                    self.follow_sheet.append(["时间", "用户ID", "用户名", "sec_uid", "用户主页"])
+                if self.fanclub_sheet.max_row == 1 and not any(self.fanclub_sheet[1]):
+                    self.fanclub_sheet.append(["时间", "消息内容"])
+
+            else:
+                print(f"【√】创建新的Excel文件: {self.excel_file}")
+                # 创建新文件
+                self.workbook = Workbook()
+                # 删除默认工作表
+                self.workbook.remove(self.workbook.active)
+
+                # 创建各类消息的工作表
+                self.chat_sheet = self.workbook.create_sheet("聊天消息")
+                self.gift_sheet = self.workbook.create_sheet("礼物消息")
+                self.like_sheet = self.workbook.create_sheet("点赞消息")
+                self.follow_sheet = self.workbook.create_sheet("关注消息")
+                self.fanclub_sheet = self.workbook.create_sheet("粉丝团消息")
+
+                # 设置表头
+                self.chat_sheet.append(["时间", "用户ID", "用户名", "sec_uid", "用户主页", "消息内容"])
+                self.gift_sheet.append(["时间", "用户名", "sec_uid", "用户主页", "礼物名称", "礼物数量"])
+                self.like_sheet.append(["时间", "用户名", "sec_uid", "用户主页", "点赞数量"])
+                self.follow_sheet.append(["时间", "用户ID", "用户名", "sec_uid", "用户主页"])
+                self.fanclub_sheet.append(["时间", "消息内容"])
+
+            print(f"【√】Excel文件初始化成功: {self.excel_file}")
+        except Exception as e:
+            print(f"【X】Excel文件初始化失败: {e}")
+
+    def save_excel(self):
+        """保存Excel文件"""
+        try:
+            self.workbook.save(self.excel_file)
+            print(f"【√】Excel文件已保存: {self.excel_file}")
+        except Exception as e:
+            print(f"【X】Excel文件保存失败: {e}")
+
     def start(self):
-        self._connectWebSocket()
-    
+        try:
+            self._connectWebSocket()
+        except KeyboardInterrupt:
+            print("\n【!】用户手动停止程序")
+            self.stop()
+        except Exception as e:
+            print(f"【X】程序运行出错: {e}")
+            self.stop()
+            raise
+
     def stop(self):
-        self.ws.close()
-    
+        print("【!】正在停止程序并保存数据...")
+        if hasattr(self, 'ws'):
+            self.ws.close()
+        self.save_excel()
+        print("【√】程序已停止")
+
     @property
     def ttwid(self):
         """
@@ -289,30 +392,62 @@ class DouyinLiveWebFetcher:
     def _wsOnClose(self, ws, *args):
         self.get_room_status()
         print("WebSocket connection closed.")
-    
+        # 连接关闭时自动保存
+        self.save_excel()
+
     def _parseChatMsg(self, payload):
         """聊天消息"""
         message = ChatMessage().parse(payload)
         user_name = message.user.nick_name
         user_id = message.user.id
+        sec_uid = getattr(message.user, 'sec_uid', '')
+        user_homepage = f"https://www.douyin.com/user/{sec_uid}" if sec_uid else ""
         content = message.content
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         print(f"【聊天msg】[{user_id}]{user_name}: {content}")
-    
+
+        # 保存到Excel
+        try:
+            self.chat_sheet.append([current_time, user_id, user_name, sec_uid, user_homepage, content])
+        except Exception as e:
+            print(f"【X】保存聊天消息到Excel失败: {e}")
+
     def _parseGiftMsg(self, payload):
         """礼物消息"""
         message = GiftMessage().parse(payload)
         user_name = message.user.nick_name
+        sec_uid = getattr(message.user, 'sec_uid', '')
+        user_homepage = f"https://www.douyin.com/user/{sec_uid}" if sec_uid else ""
         gift_name = message.gift.name
         gift_cnt = message.combo_count
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         print(f"【礼物msg】{user_name} 送出了 {gift_name}x{gift_cnt}")
-    
+
+        # 保存到Excel
+        try:
+            self.gift_sheet.append([current_time, user_name, sec_uid, user_homepage, gift_name, gift_cnt])
+        except Exception as e:
+            print(f"【X】保存礼物消息到Excel失败: {e}")
+
     def _parseLikeMsg(self, payload):
         '''点赞消息'''
         message = LikeMessage().parse(payload)
         user_name = message.user.nick_name
+        sec_uid = getattr(message.user, 'sec_uid', '')
+        user_homepage = f"https://www.douyin.com/user/{sec_uid}" if sec_uid else ""
         count = message.count
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         print(f"【点赞msg】{user_name} 点了{count}个赞")
-    
+
+        # 保存到Excel
+        try:
+            self.like_sheet.append([current_time, user_name, sec_uid, user_homepage, count])
+        except Exception as e:
+            print(f"【X】保存点赞消息到Excel失败: {e}")
+
     def _parseMemberMsg(self, payload):
         '''进入直播间消息'''
         message = MemberMessage().parse(payload)
@@ -326,8 +461,18 @@ class DouyinLiveWebFetcher:
         message = SocialMessage().parse(payload)
         user_name = message.user.nick_name
         user_id = message.user.id
+        sec_uid = getattr(message.user, 'sec_uid', '')
+        user_homepage = f"https://www.douyin.com/user/{sec_uid}" if sec_uid else ""
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         print(f"【关注msg】[{user_id}]{user_name} 关注了主播")
-    
+
+        # 保存到Excel
+        try:
+            self.follow_sheet.append([current_time, user_id, user_name, sec_uid, user_homepage])
+        except Exception as e:
+            print(f"【X】保存关注消息到Excel失败: {e}")
+
     def _parseRoomUserSeqMsg(self, payload):
         '''直播间统计'''
         message = RoomUserSeqMessage().parse(payload)
@@ -339,8 +484,16 @@ class DouyinLiveWebFetcher:
         '''粉丝团消息'''
         message = FansclubMessage().parse(payload)
         content = message.content
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         print(f"【粉丝团msg】 {content}")
-    
+
+        # 保存到Excel
+        try:
+            self.fanclub_sheet.append([current_time, content])
+        except Exception as e:
+            print(f"【X】保存粉丝团消息到Excel失败: {e}")
+
     def _parseEmojiChatMsg(self, payload):
         '''聊天表情包消息'''
         message = EmojiChatMessage().parse(payload)
@@ -372,6 +525,7 @@ class DouyinLiveWebFetcher:
         
         if message.status == 3:
             print("直播间已结束")
+            self.save_excel()
             self.stop()
     
     def _parseRoomStreamAdaptationMsg(self, payload):
