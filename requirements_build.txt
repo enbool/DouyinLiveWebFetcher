@@ -1,0 +1,7 @@
+# 打包所需的完整依赖列表
+pyinstaller>=5.0
+openpyxl>=3.0.0
+websocket-client>=1.6.0
+py-mini-racer>=0.6.0
+requests>=2.25.0
+certifi>=2021.5.25

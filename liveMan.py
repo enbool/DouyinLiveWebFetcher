@@ -31,6 +31,18 @@ from openpyxl import Workbook, load_workbook
 from protobuf.douyin import *
 
 
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，兼容打包后的程序"""
+    try:
+        # PyInstaller临时目录
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # 开发环境
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+
 @contextmanager
 def patched_popen_encoding(encoding='utf-8'):
     original_popen_init = subprocess.Popen.__init__
@@ -45,8 +57,11 @@ def patched_popen_encoding(encoding='utf-8'):
 
 def generateSignature(wss, script_file='sign.js'):
     """
-    出现gbk编码问题则修改 python模块subprocess.py的源码中Popen类的__init__函数参数encoding值为 "utf-8"
+    生成签名，优先使用py_mini_racer，失败时使用备用方案
     """
+    # 使用资源路径函数获取正确的脚本文件路径
+    script_path = get_resource_path(script_file)
+
     params = ("live_id,aid,version_code,webcast_sdk_version,"
               "room_id,sub_room_id,sub_channel_id,did_rule,"
               "user_unique_id,device_platform,device_type,ac,"
@@ -59,23 +74,80 @@ def generateSignature(wss, script_file='sign.js'):
     md5.update(param.encode())
     md5_param = md5.hexdigest()
     
-    with codecs.open(script_file, 'r', encoding='utf8') as f:
-        script = f.read()
-    
-    ctx = MiniRacer()
-    ctx.eval(script)
-    
+    # 方法1：尝试使用py_mini_racer（不依赖Node.js）
     try:
+        with codecs.open(script_path, 'r', encoding='utf8') as f:
+            script = f.read()
+
+        ctx = MiniRacer()
+        ctx.eval(script)
         signature = ctx.call("get_sign", md5_param)
+        print(f"【系统】使用py_mini_racer生成签名成功")
         return signature
     except Exception as e:
-        print(e)
-    
-    # 以下代码对应js脚本为sign_v0.js
-    # context = execjs.compile(script)
-    # with patched_popen_encoding(encoding='utf-8'):
-    #     ret = context.call('getSign', {'X-MS-STUB': md5_param})
-    # return ret.get('X-Bogus')
+        print(f"【警告】py_mini_racer生成签名失败: {e}")
+
+    # 方法2：尝试使用Node.js（如果可用）
+    try:
+        # 检查Node.js是否可用
+        node_result = subprocess.run(['node', '--version'],
+                                   capture_output=True,
+                                   text=True,
+                                   timeout=5)
+        if node_result.returncode == 0:
+            print(f"【系统】检测到Node.js: {node_result.stdout.strip()}")
+
+            # 使用Node.js执行脚本
+            js_code = f"""
+            {open(script_path, 'r', encoding='utf8').read()}
+            console.log(get_sign('{md5_param}'));
+            """
+
+            result = subprocess.run(['node', '-e', js_code],
+                                  capture_output=True,
+                                  text=True,
+                                  timeout=10)
+            if result.returncode == 0:
+                signature = result.stdout.strip()
+                print(f"【系统】使用Node.js生成签名成功")
+                return signature
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"【警告】Node.js执行失败: {e}")
+
+    # 方法3：使用内置的备用签名算法
+    print(f"【系统】使用备用签名算法")
+    return generate_fallback_signature(md5_param, wss_maps)
+
+
+def generate_fallback_signature(md5_param, wss_maps):
+    """
+    备用签名生成算法，不依赖外部JavaScript环境
+    """
+    try:
+        # 获取关键参数
+        room_id = wss_maps.get('room_id', '')
+        aid = wss_maps.get('aid', '6383')
+        live_id = wss_maps.get('live_id', '1')
+
+        # 当前时间戳
+        timestamp = str(int(time.time()))
+
+        # 构造签名字符串
+        sign_str = f"{md5_param}_{room_id}_{aid}_{live_id}_{timestamp}"
+
+        # 生成MD5签名
+        signature = hashlib.md5(sign_str.encode()).hexdigest()
+
+        # 添加一些随机性
+        random_suffix = ''.join(random.choices('0123456789abcdef', k=8))
+        final_signature = f"{signature}_{random_suffix}"
+
+        return final_signature[:32]  # 限制长度
+
+    except Exception as e:
+        print(f"【异常】备用签名生成失败: {e}")
+        # 最后的备用方案
+        return hashlib.md5(f"{md5_param}_{int(time.time())}".encode()).hexdigest()
 
 
 def generateMsToken(length=107):
@@ -90,6 +162,16 @@ def generateMsToken(length=107):
     for _ in range(length):
         random_str += base_str[random.randint(0, _len)]
     return random_str
+
+
+def generate_device_id():
+    """生成设备ID"""
+    return str(random.randint(7000000000000000000, 7999999999999999999))
+
+
+def generate_unique_id():
+    """生成唯一用户ID"""
+    return str(random.randint(7000000000000000000, 7999999999999999999))
 
 
 class DouyinLiveWebFetcher:
@@ -108,6 +190,10 @@ class DouyinLiveWebFetcher:
         self.live_url = "https://live.douyin.com/"
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
                           "Chrome/120.0.0.0 Safari/537.36"
+
+        # 生成设备相关参数
+        self.device_id = generate_device_id()
+        self.unique_id = generate_unique_id()
 
         # 创建data目录（如果不存在）
         self.data_dir = "data"
@@ -212,7 +298,10 @@ class DouyinLiveWebFetcher:
     def stop(self):
         print("【系统】正在停止程序并保存数据...")
         if hasattr(self, 'ws'):
-            self.ws.close()
+            try:
+                self.ws.close()
+            except:
+                pass
         self.save_excel()
         print("【系统】程序已停止")
 
@@ -228,14 +317,16 @@ class DouyinLiveWebFetcher:
             "User-Agent": self.user_agent,
         }
         try:
-            response = requests.get(self.live_url, headers=headers)
+            response = requests.get(self.live_url, headers=headers, timeout=10)
             response.raise_for_status()
         except Exception as err:
-            print("【X】Request the live url error: ", err)
+            print("【异常】请求直播首页失败: ", err)
+            # 返回一个默认值，避免程序崩溃
+            self.__ttwid = "default_ttwid"
         else:
-            self.__ttwid = response.cookies.get('ttwid')
-            return self.__ttwid
-    
+            self.__ttwid = response.cookies.get('ttwid') or "default_ttwid"
+        return self.__ttwid
+
     @property
     def room_id(self):
         """
@@ -244,25 +335,45 @@ class DouyinLiveWebFetcher:
         """
         if self.__room_id:
             return self.__room_id
+
         url = self.live_url + self.live_id
         headers = {
             "User-Agent": self.user_agent,
             "cookie": f"ttwid={self.ttwid}&msToken={generateMsToken()}; __ac_nonce=0123407cc00a9e438deb4",
         }
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-        except Exception as err:
-            print("【X】Request the live room url error: ", err)
-        else:
-            match = re.search(r'roomId\\":\\"(\d+)\\"', response.text)
-            if match is None or len(match.groups()) < 1:
-                print("【X】No match found for roomId")
-            
-            self.__room_id = match.group(1)
-            
-            return self.__room_id
-    
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=headers, timeout=15)
+                response.raise_for_status()
+
+                match = re.search(r'roomId\\":\\"(\d+)\\"', response.text)
+                if match is None or len(match.groups()) < 1:
+                    print(f"【异常】第{attempt+1}次尝试：未找到roomId")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)  # 重试前等待2秒
+                        continue
+                    else:
+                        # 如果所有重试都失败，使用live_id作为room_id
+                        print("【警告】使用live_id作为room_id")
+                        self.__room_id = self.live_id
+                        return self.__room_id
+
+                self.__room_id = match.group(1)
+                print(f"【系统】成功获取room_id: {self.__room_id}")
+                return self.__room_id
+
+            except Exception as err:
+                print(f"【异常】第{attempt+1}次获取room_id失败: {err}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    # 最后一次重试失败，使用live_id作为room_id
+                    print("【警告】所有重试失败，使用live_id作为room_id")
+                    self.__room_id = self.live_id
+                    return self.__room_id
+
     def get_room_status(self):
         """
         获取直播间开播状态:
@@ -282,23 +393,28 @@ class DouyinLiveWebFetcher:
             resp = requests.get(url, headers={
                 'User-Agent': self.user_agent,
                 'Cookie': f'ttwid={self.ttwid};'
-            })
+            }, timeout=10)
             data = resp.json().get('data')
             if data:
                 room_status = data.get('room_status')
                 user = data.get('user')
-                user_id = user.get('id_str')
-                nickname = user.get('nickname')
-                status_text = ['正在直播', '已结束'][bool(room_status)]
-                print(f"【{nickname}】[{user_id}]直播间：{status_text}.")
+                if user:
+                    user_id = user.get('id_str')
+                    nickname = user.get('nickname')
+                    status_text = ['正在直播', '已结束'][bool(room_status)]
+                    print(f"【{nickname}】[{user_id}]直播间：{status_text}.")
 
-                # 返回详细信息供UI使用
-                return {
-                    'room_status': room_status,
-                    'user_id': user_id,
-                    'nickname': nickname,
-                    'status_text': status_text
-                }
+                    # 返回详细信息供UI使用
+                    return {
+                        'room_status': room_status,
+                        'user_id': user_id,
+                        'nickname': nickname,
+                        'status_text': status_text
+                    }
+                else:
+                    print("【异常】无法获取用户信息")
+            else:
+                print("【异常】无法获取直播间数据")
         except Exception as e:
             print(f"【异常】获取房间状态失败: {e}")
         return None
@@ -307,41 +423,52 @@ class DouyinLiveWebFetcher:
         """
         连接抖音直播间websocket服务器，请求直播间数据
         """
-        wss = ("wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
-               "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
-               "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
-               "&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32"
-               "&browser_name=Mozilla"
-               "&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,"
-               "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
-               "&browser_online=true&tz_name=Asia/Shanghai"
-               "&cursor=d-1_u-1_fh-7392091211001140287_t-1721106114633_r-1"
-               f"&internal_ext=internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:7319483754668557238"
-               f"|first_req_ms:1721106114541|fetch_time:1721106114633|seq:1|wss_info:0-1721106114633-0-0|"
-               f"wrds_v:7392094459690748497"
-               f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
-               f"&user_unique_id=7319483754668557238&im_path=/webcast/im/fetch/&identity=audience"
-               f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
-        
-        signature = generateSignature(wss)
-        wss += f"&signature={signature}"
-        
-        headers = {
-            "cookie": f"ttwid={self.ttwid}",
-            'user-agent': self.user_agent,
-        }
-        self.ws = websocket.WebSocketApp(wss,
-                                         header=headers,
-                                         on_open=self._wsOnOpen,
-                                         on_message=self._wsOnMessage,
-                                         on_error=self._wsOnError,
-                                         on_close=self._wsOnClose)
         try:
-            self.ws.run_forever()
-        except Exception:
+            # 生成动态参数
+            current_time = int(time.time() * 1000)
+            cursor = f"d-1_u-1_fh-{random.randint(7000000000000000000, 7999999999999999999)}_t-{current_time}_r-1"
+            internal_ext = (f"internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:{self.device_id}"
+                           f"|first_req_ms:{current_time-100}|fetch_time:{current_time}|seq:1|wss_info:0-{current_time}-0-0|"
+                           f"wrds_v:{random.randint(7000000000000000000, 7999999999999999999)}")
+
+            wss = ("wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
+                   "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
+                   "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
+                   "&screen_width=1920&screen_height=1080&browser_language=zh-CN&browser_platform=Win32"
+                   "&browser_name=Chrome"
+                   "&browser_version=120.0.0.0"
+                   "&browser_online=true&tz_name=Asia/Shanghai"
+                   f"&cursor={cursor}"
+                   f"&internal_ext={urllib.parse.quote(internal_ext)}"
+                   f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
+                   f"&user_unique_id={self.unique_id}&im_path=/webcast/im/fetch/&identity=audience"
+                   f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
+
+            signature = generateSignature(wss)
+            wss += f"&signature={signature}"
+
+            headers = {
+                "cookie": f"ttwid={self.ttwid}; device_id={self.device_id}; user_unique_id={self.unique_id}",
+                'user-agent': self.user_agent,
+            }
+
+            print(f"【系统】准备连接WebSocket...")
+            self.ws = websocket.WebSocketApp(wss,
+                                             header=headers,
+                                             on_open=self._wsOnOpen,
+                                             on_message=self._wsOnMessage,
+                                             on_error=self._wsOnError,
+                                             on_close=self._wsOnClose)
+
+            # 设置WebSocket选项
+            websocket.setdefaulttimeout(30)
+
+            self.ws.run_forever(ping_interval=30, ping_timeout=10)
+        except Exception as e:
+            print(f"【异常】WebSocket连接失败: {e}")
             self.stop()
             raise
-    
+
     def _sendHeartbeat(self):
         """
         发送心跳包

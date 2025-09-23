@@ -11,3 +11,4 @@ package-lock.json
 data/
 live_config.json
 live_config.json
+/build
