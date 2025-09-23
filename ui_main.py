@@ -2,21 +2,22 @@
 # coding:utf-8
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext
 import threading
 import os
 import subprocess
 import sys
 from datetime import datetime
 import json
-import gzip
 import time
-import requests
+import random
+import urllib.parse
 import websocket
 from liveMan import DouyinLiveWebFetcher
 from protobuf.douyin import *
 import io
 from contextlib import redirect_stdout, redirect_stderr
+from liveManOther import DouyinLiveWebFetcher2
 
 class ModernStyle:
     """现代化UI样式配置"""
@@ -863,11 +864,12 @@ class LiveStreamUI:
 class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
     """自定义的DouyinLiveWebFetcher，支持日志回调"""
 
-    def __init__(self, live_id, ui_mode=False, log_callback=None):
+    def __init__(self, live_id, ui_mode=False, log_callback=None, abogus_file='a_bogus.js'):
         self.log_callback = log_callback
         self.stop_callback = None
         self._running = False
-        super().__init__(live_id, ui_mode)
+        # 传递 abogus_file 参数到父类
+        super().__init__(live_id, ui_mode, abogus_file)
 
     def set_stop_callback(self, callback):
         """设置停止回调函数"""
@@ -914,6 +916,35 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
                 raise Exception("无法获取room_id")
 
             self.log(f"【系统】room_id: {self.room_id}")
+
+            # 生成动态参数，与 liveManOther.py 保持一致
+            current_time = int(time.time() * 1000)
+            cursor = f"d-1_u-1_fh-{random.randint(7000000000000000000, 7999999999999999999)}_t-{current_time}_r-1"
+            internal_ext = (f"internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:{self.device_id}"
+                           f"|first_req_ms:{current_time-100}|fetch_time:{current_time}|seq:1|wss_info:0-{current_time}-0-0|"
+                           f"wrds_v:{random.randint(7000000000000000000, 7999999999999999999)}")
+
+            wss = ("wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
+                   "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
+                   "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
+                   "&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32"
+                   "&browser_name=Mozilla"
+                   "&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,"
+                   "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
+                   "&browser_online=true&tz_name=Asia/Shanghai"
+                   f"&cursor={cursor}"
+                   f"&internal_ext={urllib.parse.quote(internal_ext)}"
+                   f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
+                   f"&user_unique_id={self.unique_id}&im_path=/webcast/im/fetch/&identity=audience"
+                   f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
+
+            signature = super().generateSignature(wss)  # 调用父类方法
+            wss += f"&signature={signature}"
+
+            headers = {
+                "cookie": f"ttwid={self.ttwid}; device_id={self.device_id}; user_unique_id={self.unique_id}",
+                'user-agent': self.user_agent,
+            }
 
             # 调用父类方法
             super()._connectWebSocket()
@@ -969,19 +1000,36 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
         try:
             self.log(f"【系统】正在检查直播间 {self.live_id} 状态...")
 
+            msToken = self.generateMsToken(length=182)  # 更新长度为182
+            nonce = self.get_ac_nonce()
+            signature = self.get_ac_signature(nonce)
+
             url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
-                   '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
-                   '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
-                   '&browser_name=Edge&browser_version=133.0.0.0'
+                   '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=page_refresh'
+                   '&cookie_enabled=true&screen_width=5120&screen_height=1440&browser_language=zh-CN&browser_platform=Win32'
+                   '&browser_name=Edge&browser_version=140.0.0.0'
                    f'&web_rid={self.live_id}'
                    f'&room_id_str={self.room_id}'
-                   '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
-                   '&msToken=&a_bogus=')
-            resp = requests.get(url, headers={
-                'User-Agent': self.user_agent,
-                'Cookie': f'ttwid={self.ttwid};'
-            }, timeout=10)
+                   '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason=&msToken=' + msToken)
 
+            # 解析 URL 参数
+            from urllib3.util.url import parse_url
+            query = parse_url(url).query
+            params = {i[0]: i[1] for i in [j.split('=') for j in query.split('&')]}
+            a_bogus = self.get_a_bogus(params)  # 计算a_bogus
+            if not a_bogus:
+                self.log("【警告】获取 a_bogus 失败，可能影响直播间状态获取")
+
+            url += f"&a_bogus={a_bogus}"
+            headers = self.headers.copy()
+            headers.update({
+                'Referer': f'https://live.douyin.com/{self.live_id}',
+                'Cookie': f'ttwid={self.ttwid};'
+            })
+            if nonce and signature:
+                headers['Cookie'] += f'__ac_nonce={nonce}; __ac_signature={signature}'
+
+            resp = self.session.get(url, headers=headers, timeout=10)
             data = resp.json().get('data')
             if data:
                 room_status = data.get('room_status')
@@ -1007,6 +1055,17 @@ class CustomDouyinLiveWebFetcher(DouyinLiveWebFetcher):
             self.log(f"【异常】获取房间状态失败: {e}")
         return None
 
-if __name__ == "__main__":
-    app = LiveStreamUI()
-    app.run()
+    def generateMsToken(self, length=107):
+        """
+        产生请求头部cookie中的msToken字段，其实为随机的107位字符
+        :param length:字符位数
+        :return:msToken
+        """
+        import random
+        import string
+        random_str = ''
+        base_str = string.ascii_letters + string.digits + '=_'
+        _len = len(base_str) - 1
+        for _ in range(length):
+            random_str += base_str[random.randint(0, _len)]
+        return random_str

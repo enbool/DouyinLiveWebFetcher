@@ -22,13 +22,51 @@ from datetime import datetime
 import os
 import signal
 import sys
+import execjs
 
 import requests
 import websocket
 from py_mini_racer import MiniRacer
 from openpyxl import Workbook, load_workbook
+from urllib3.util.url import parse_url
 
+from liveManOther import DouyinLiveWebFetcher2
 from protobuf.douyin import *
+
+
+# 临时替代 ac_signature.py 的函数，因为原文件为空
+def get__ac_signature(host, ac_nonce, user_agent):
+    """
+    临时的签名生成函数，需要根据实际的 ac_signature.py 实现进行替换
+    """
+    # 这是一个占位实现，实际应该使用正确的算法
+    import time
+    import hashlib
+
+    timestamp = str(int(time.time()))
+    sign_string = f"{host}_{ac_nonce}_{user_agent}_{timestamp}"
+    return hashlib.md5(sign_string.encode()).hexdigest()
+
+
+def execute_js(js_file: str):
+    """
+    执行 JavaScript 文件
+    :param js_file: JavaScript 文件路径
+    :return: 执行结果
+    """
+    script_path = get_resource_path(js_file)
+    with open(script_path, 'r', encoding='utf-8') as file:
+        js_code = file.read()
+
+    try:
+        # 优先使用 py_mini_racer
+        ctx = MiniRacer()
+        ctx.eval(js_code)
+        return ctx
+    except Exception:
+        # 如果失败，使用 execjs
+        ctx = execjs.compile(js_code)
+        return ctx
 
 
 def get_resource_path(relative_path):
@@ -176,20 +214,27 @@ def generate_unique_id():
 
 class DouyinLiveWebFetcher:
     
-    def __init__(self, live_id, ui_mode=False):
+    def __init__(self, live_id, ui_mode=False, abogus_file='a_bogus.js'):
         """
         直播间弹幕抓取对象
         :param live_id: 直播间的直播id，打开直播间web首页的链接如：https://live.douyin.com/261378947940，
                         其中的261378947940即是live_id
         :param ui_mode: 是否为UI模式
+        :param abogus_file: a_bogus JavaScript文件路径
         """
+        self.abogus_file = abogus_file
         self.__ttwid = None
         self.__room_id = None
+        self.session = requests.Session()  # 使用 Session 管理连接
         self.live_id = str(live_id)  # 确保live_id是字符串类型
         self.ui_mode = ui_mode
+        self.host = "https://www.douyin.com/"
         self.live_url = "https://live.douyin.com/"
-        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
-                          "Chrome/120.0.0.0 Safari/537.36"
+        # 更新 User-Agent 到最新版本
+        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
+        self.headers = {
+            'User-Agent': self.user_agent
+        }
 
         # 生成设备相关参数
         self.device_id = generate_device_id()
@@ -302,6 +347,12 @@ class DouyinLiveWebFetcher:
                 self.ws.close()
             except:
                 pass
+        # 关闭 session 连接
+        if hasattr(self, 'session'):
+            try:
+                self.session.close()
+            except:
+                pass
         self.save_excel()
         print("【系统】程序已停止")
 
@@ -317,7 +368,7 @@ class DouyinLiveWebFetcher:
             "User-Agent": self.user_agent,
         }
         try:
-            response = requests.get(self.live_url, headers=headers, timeout=10)
+            response = self.session.get(self.live_url, headers=headers, timeout=10)
             response.raise_for_status()
         except Exception as err:
             print("【异常】请求直播首页失败: ", err)
@@ -345,7 +396,7 @@ class DouyinLiveWebFetcher:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, headers=headers, timeout=15)
+                response = self.session.get(url, headers=headers, timeout=15)
                 response.raise_for_status()
 
                 match = re.search(r'roomId\\":\\"(\d+)\\"', response.text)
@@ -374,6 +425,44 @@ class DouyinLiveWebFetcher:
                     self.__room_id = self.live_id
                     return self.__room_id
 
+    def get_ac_nonce(self):
+        """
+        获取 __ac_nonce
+        """
+        try:
+            resp_cookies = self.session.get(self.host, headers=self.headers).cookies
+            return resp_cookies.get("__ac_nonce")
+        except Exception as e:
+            print(f"【异常】获取 __ac_nonce 失败: {e}")
+            return None
+
+    def get_ac_signature(self, __ac_nonce: str = None) -> str:
+        """
+        获取 __ac_signature
+        """
+        if not __ac_nonce:
+            return None
+        try:
+            __ac_signature = get__ac_signature(self.host[8:], __ac_nonce, self.user_agent)
+            self.session.cookies.set("__ac_signature", __ac_signature)
+            return __ac_signature
+        except Exception as e:
+            print(f"【异常】获取 __ac_signature 失败: {e}")
+            return None
+
+    def get_a_bogus(self, url_params: dict):
+        """
+        获取 a_bogus
+        """
+        try:
+            url = urllib.parse.urlencode(url_params)
+            ctx = execute_js(self.abogus_file)
+            _a_bogus = ctx.call("get_ab", url, self.user_agent)
+            return _a_bogus
+        except Exception as e:
+            print(f"【异常】获取 a_bogus 失败: {e}")
+            return ""
+
     def get_room_status(self):
         """
         获取直播间开播状态:
@@ -381,20 +470,39 @@ class DouyinLiveWebFetcher:
         room_status: 0 直播进行中
         :return: 包含主播信息和直播状态的字典
         """
+
         try:
-            url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
-                   '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live'
-                   '&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32'
-                   '&browser_name=Edge&browser_version=133.0.0.0'
-                   f'&web_rid={self.live_id}'
-                   f'&room_id_str={self.room_id}'
-                   '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason='
-                   '&msToken=&a_bogus=')
-            resp = requests.get(url, headers={
-                'User-Agent': self.user_agent,
-                'Cookie': f'ttwid={self.ttwid};'
-            }, timeout=10)
-            data = resp.json().get('data')
+            # msToken = generateMsToken(length=182)  # 更新长度为182
+            # nonce = self.get_ac_nonce()
+            # signature = self.get_ac_signature(nonce)
+            #
+            # url = ('https://live.douyin.com/webcast/room/web/enter/?aid=6383'
+            #        '&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=page_refresh'
+            #        '&cookie_enabled=true&screen_width=5120&screen_height=1440&browser_language=zh-CN&browser_platform=Win32'
+            #        '&browser_name=Edge&browser_version=140.0.0.0'
+            #        f'&web_rid={self.live_id}'
+            #        f'&room_id_str={self.room_id}'
+            #        '&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason=&msToken=' + msToken)
+            #
+            # query = parse_url(url).query
+            # params = {i[0]: i[1] for i in [j.split('=') for j in query.split('&')]}
+            # a_bogus = self.get_a_bogus(params)  # 计算a_bogus,成功率不是100%，出现失败时重试即可
+            # if not a_bogus:
+            #     print("【警告】获取 a_bogus 失败，可能影响直播间状态获取")
+            #
+            # url += f"&a_bogus={a_bogus}"
+            # headers = self.headers.copy()
+            # headers.update({
+            #     'Referer': f'https://live.douyin.com/{self.live_id}',
+            #     'Cookie': f'ttwid={self.ttwid};'
+            # })
+            # if nonce and signature:
+            #     headers['Cookie'] += f'__ac_nonce={nonce}; __ac_signature={signature}'
+            #
+            # resp = self.session.get(url, headers=headers, timeout=10)
+            # data = resp.json().get('data')
+            # if not data:
+            data = DouyinLiveWebFetcher2.get_room_status()
             if data:
                 room_status = data.get('room_status')
                 user = data.get('user')
@@ -424,7 +532,7 @@ class DouyinLiveWebFetcher:
         连接抖音直播间websocket服务器，请求直播间数据
         """
         try:
-            # 生成动态参数
+            # 生成动态参数，与 liveManOther.py 保持一致
             current_time = int(time.time() * 1000)
             cursor = f"d-1_u-1_fh-{random.randint(7000000000000000000, 7999999999999999999)}_t-{current_time}_r-1"
             internal_ext = (f"internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:{self.device_id}"
@@ -434,9 +542,10 @@ class DouyinLiveWebFetcher:
             wss = ("wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
                    "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
                    "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
-                   "&screen_width=1920&screen_height=1080&browser_language=zh-CN&browser_platform=Win32"
-                   "&browser_name=Chrome"
-                   "&browser_version=120.0.0.0"
+                   "&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32"
+                   "&browser_name=Mozilla"
+                   "&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,"
+                   "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
                    "&browser_online=true&tz_name=Asia/Shanghai"
                    f"&cursor={cursor}"
                    f"&internal_ext={urllib.parse.quote(internal_ext)}"
@@ -477,8 +586,9 @@ class DouyinLiveWebFetcher:
             try:
                 heartbeat = PushFrame(payload_type='hb').SerializeToString()
                 self.ws.send(heartbeat, websocket.ABNF.OPCODE_PING)
+                print("【√】发送心跳包")
             except Exception as e:
-                print("【异常】心跳包检测错误: ", e)
+                print("【X】心跳包检测错误: ", e)
                 break
             else:
                 time.sleep(5)
@@ -487,6 +597,7 @@ class DouyinLiveWebFetcher:
         """
         连接建立成功
         """
+        print("【√】WebSocket连接成功.")
         threading.Thread(target=self._sendHeartbeat).start()
 
     def _wsOnMessage(self, ws, message):

@@ -6,5 +6,37 @@
     "live_status": "未知状态",
     "excel_file": "data\\douyin_live_900013148868.xlsx",
     "added_time": "2025-09-23T21:42:12.103320"
+  },
+  "29462012159": {
+    "live_id": "29462012159",
+    "username": "未知主播",
+    "status": "已停止",
+    "live_status": "未知状态",
+    "excel_file": "data\\douyin_live_29462012159.xlsx",
+    "added_time": "2025-09-23T22:10:08.620002"
+  },
+  "252912408635": {
+    "live_id": "252912408635",
+    "username": "未知主播",
+    "status": "未开始采集",
+    "live_status": "未知状态",
+    "excel_file": "data\\douyin_live_252912408635.xlsx",
+    "added_time": "2025-09-23T22:20:34.529713"
+  },
+  "861456140381": {
+    "live_id": "861456140381",
+    "username": "未知主播",
+    "status": "未开始采集",
+    "live_status": "未知状态",
+    "excel_file": "data\\douyin_live_861456140381.xlsx",
+    "added_time": "2025-09-23T22:21:21.864868"
+  },
+  "34913886621": {
+    "live_id": "34913886621",
+    "username": "未知主播",
+    "status": "未开始采集",
+    "live_status": "未知状态",
+    "excel_file": "data\\douyin_live_34913886621.xlsx",
+    "added_time": "2025-09-23T22:30:22.615813"
   }
 }
